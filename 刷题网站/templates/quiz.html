@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>无线电A类考试刷题系统</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            padding: 20px;
+            background-color: #f8f9fa;
+        }
+        .question-container {
+            background-color: white;
+            border-radius: 10px;
+            padding: 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .question-text {
+            font-size: 1.2em;
+            line-height: 1.6;
+            margin-bottom: 25px;
+            color: #2c3e50;
+        }
+        .option-btn {
+            display: block;
+            width: 100%;
+            text-align: left;
+            margin-bottom: 15px;
+            padding: 15px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            background-color: #f8f9fa;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            padding-left: 50px;
+        }
+        .option-btn:before {
+            content: attr(data-option);
+            position: absolute;
+            left: 15px;
+            font-weight: bold;
+            color: #6c757d;
+        }
+        .option-btn:hover {
+            background-color: #e9ecef;
+            transform: translateY(-2px);
+        }
+        .option-btn.selected {
+            background-color: #d4edda;
+            border-color: #28a745;
+            color: #155724;
+        }
+        .feedback {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 5px;
+            display: none;
+        }
+        .correct {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .incorrect {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .progress-text {
+            margin-bottom: 20px;
+            font-weight: bold;
+        }
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255,255,255,0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .error-alert {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1050;
+            min-width: 300px;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading" class="loading-overlay" style="display: none;">
+        <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;"></div>
+    </div>
+
+    <div id="error-alert" class="alert alert-danger error-alert" style="display: none;"></div>
+
+    <div class="container">
+        <h1 class="text-center mb-4">无线电A类考试刷题系统</h1>
+        
+        <div class="progress-text">
+            题目 <span id="current-question">{{ question_number }}</span> / 
+            <span id="total-questions">{{ total_questions }}</span>
+        </div>
+        
+        <div class="question-container">
+            <h3 id="question-text" class="question-text mb-4">{{ question_text }}</h3>
+            
+            <div id="options-container">
+                {% for i in range(4) %}
+                <div class="form-check mb-3">
+                    <input class="form-check-input" type="radio" 
+                           name="options" id="option-{{ i }}" 
+                           value="{{ chr(65 + i) }}">
+                    <label class="form-check-label option-btn" for="option-{{ i }}" 
+                           data-option="{{ chr(65 + i) }}">
+                        {{ chr(65 + i) }}. {{ options[i] }}
+                    </label>
+                </div>
+                {% endfor %}
+            </div>
+            
+            <div id="feedback" class="feedback"></div>
+        </div>
+        
+        <div class="d-flex justify-content-between mt-4">
+            <button id="prev-btn" class="btn btn-secondary" 
+                    {% if question_number <= 1 %}disabled{% endif %}>
+                上一题
+            </button>
+            <button id="next-btn" class="btn btn-primary" 
+                    {% if question_number >= total_questions %}disabled{% endif %}>
+                下一题
+            </button>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const correctAnswer = "{{ correct_answer }}";
+            const feedbackDiv = document.getElementById('feedback');
+            const errorAlert = document.getElementById('error-alert');
+            const loadingOverlay = document.getElementById('loading');
+            
+            function showLoading() {
+                loadingOverlay.style.display = 'flex';
+            }
+            
+            function hideLoading() {
+                loadingOverlay.style.display = 'none';
+            }
+            
+            function showError(message) {
+                errorAlert.textContent = message;
+                errorAlert.style.display = 'block';
+                setTimeout(() => {
+                    errorAlert.style.display = 'none';
+                }, 3000);
+            }
+            
+            // 选项点击事件
+            document.querySelectorAll('input[name="options"]').forEach(input => {
+                input.addEventListener('change', function() {
+                    document.querySelectorAll('.option-btn').forEach(btn => {
+                        btn.classList.remove('selected');
+                    });
+                    this.nextElementSibling.classList.add('selected');
+                    
+                    fetch('/check_answer', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                        },
+                        body: `answer=${this.value}&correct_answer=${correctAnswer}`
+                    })
+                    .then(response => {
+                        if (!response.ok) throw new Error('网络响应不正常');
+                        return response.json();
+                    })
+                    .then(data => {
+                        feedbackDiv.textContent = data.message;
+                        feedbackDiv.className = 'feedback ' + 
+                            (data.correct ? 'correct' : 'incorrect');
+                        feedbackDiv.style.display = 'block';
+                    })
+                    .catch(error => {
+                        showError('检查答案时出错: ' + error.message);
+                    });
+                });
+            });
+            
+            // 导航按钮事件
+            document.getElementById('prev-btn').addEventListener('click', function() {
+                if (!this.disabled) {
+                    showLoading();
+                    fetch('/navigate', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                        },
+                        body: 'direction=prev'
+                    })
+                    .then(response => {
+                        if (!response.ok) throw new Error('导航请求失败');
+                        window.location.reload();
+                    })
+                    .catch(error => {
+                        hideLoading();
+                        showError(error.message);
+                    });
+                }
+            });
+            
+            document.getElementById('next-btn').addEventListener('click', function() {
+                if (!this.disabled) {
+                    showLoading();
+                    fetch('/navigate', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                        },
+                        body: 'direction=next'
+                    })
+                    .then(response => {
+                        if (!response.ok) throw new Error('导航请求失败');
+                        window.location.reload();
+                    })
+                    .catch(error => {
+                        hideLoading();
+                        showError(error.message);
+                    });
+                }
+            });
+        });
+    </script>
+</body>
+</html>
